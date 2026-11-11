@@ -9,15 +9,15 @@ simulated phase difference is monotonic with a slope of at least
 0.2 deg/deg, so one phase maps to one angle).
 
 Inputs : ff_<f>GHz_p1.txt and ff_<f>GHz_p2.txt (CST farfield ASCII export of
-         dualvivaldi_dizi.cst, directivity with phase, 1 degree steps)
-Outputs: sonuclar/dizi/vivaldi_dizi_kalibrasyon_H_duzlemi.csv
-         sonuclar/dizi/kalibrasyon_faz.png
+         dualvivaldi_array.cst, directivity with phase, 1 degree steps)
+Outputs: results/array/vivaldi_array_calibration_H_plane.csv
+         results/array/calibration_phase.png
 
 Geometry as exported by CST: boresight is theta = 90, phi = 90 (+y), the
 H-plane is the phi = 90 / 270 plane, angle = 90 - theta, co-polar component
 is E_phi.
 
-Run:  python scriptler/vivaldi_kalibrasyon.py C:\\CST
+Run:  python scripts/vivaldi_calibration.py C:\\CST
 """
 import os
 import sys
@@ -28,7 +28,7 @@ FF_DIR = sys.argv[1] if len(sys.argv) > 1 else r"C:\CST"
 FREQS = [2, 3, 4, 5, 6]          # GHz
 D_MM = 24.0                      # element spacing (mm)
 C0 = 299.792458                  # mm*GHz
-OUT = os.path.join(ROOT, "sonuclar", "dizi")
+OUT = os.path.join(ROOT, "results", "array")
 os.makedirs(OUT, exist_ok=True)
 
 
@@ -85,8 +85,8 @@ for f in FREQS:
     err = np.abs(wrap(dphi - ideal))[flag == 1]
     print(f"{f} GHz: unambiguous {lo:+d}..{hi:+d} deg, |sim - ideal| max {err.max():.1f} deg")
 
-with open(os.path.join(OUT, "vivaldi_dizi_kalibrasyon_H_duzlemi.csv"), "w") as fh:
-    fh.write("frekans_GHz,aci_deg,dphi_sim_deg,dphi_ideal_deg,genlik_p1_dBi,genlik_p2_dBi,genlik_farki_dB,belirsizliksiz_bolge\n")
+with open(os.path.join(OUT, "vivaldi_array_calibration_H_plane.csv"), "w") as fh:
+    fh.write("freq_GHz,angle_deg,dphi_sim_deg,dphi_ideal_deg,gain_p1_dBi,gain_p2_dBi,gain_diff_dB,unambiguous\n")
     for r in rows:
         fh.write(f"{r[0]},{r[1]},{r[2]:.2f},{r[3]:.2f},{r[4]:.2f},{r[5]:.2f},{r[6]:.2f},{r[7]}\n")
 
@@ -109,6 +109,6 @@ try:
     ax.grid(alpha=0.3)
     ax.legend(fontsize=8, ncol=2)
     fig.tight_layout()
-    fig.savefig(os.path.join(OUT, "kalibrasyon_faz.png"), dpi=150)
+    fig.savefig(os.path.join(OUT, "calibration_phase.png"), dpi=150)
 except ImportError:
     pass

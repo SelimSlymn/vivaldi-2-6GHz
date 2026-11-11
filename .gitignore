@@ -12,7 +12,7 @@ sim_*/
 *_sim/
 *.h5
 
-# Large farfield exports (regenerate with the CST macros)
+# Large farfield exports (export from CST when needed)
 ff_*.txt
 
 # Python

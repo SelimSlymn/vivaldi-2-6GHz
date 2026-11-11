@@ -1,71 +1,73 @@
 # -*- coding: utf-8 -*-
 """
-Antipodal Vivaldi (elips profilli) - openEMS simulasyonu
-=========================================================
-Geometri Vivaldi.zip icindeki DXF dosyalarindan turetildi (birim: mm).
+Antipodal Vivaldi (elliptical profile) - openEMS simulation (version 1)
+=======================================================================
+The geometry was derived from the original DXF layout (units: mm).
 
-Katmanlar:
-  z = 0   : alt bakir (sola acilan kol + besleme seridi + SMA toprak pad'leri)
-  0..h    : FR-4 alttas
-  z = h   : ust bakir (saga acilan kol + 20 mm besleme pad'i)
+Layers:
+  z = 0   : bottom copper (arm flaring to the left + feed strip + SMA ground pads)
+  0..h    : FR-4 substrate
+  z = h   : top copper (arm flaring to the right + 20 mm feed pad)
 
-Besleme: SMA konnektoru yerine, pin konumunda (0, 15) alttasin icinden
-gecen dikey 50 ohm lumped port kullaniliyor (alt serit -> ust toprak).
-Bu yuzden ust bakirdaki anti-pad deligi modelde yok. Anten bandi ve
-isima diyagrami icin yeterli bir yaklasim; SMA gecisinin kendi etkisi
-(birkac yuz MHz'lik kayma) modelde yer almaz.
+Feed: instead of the SMA connector, a vertical 50 ohm lumped port through the
+substrate at the pin position (0, 15) is used (bottom strip -> top ground).
+Therefore the anti-pad hole in the top copper is not modelled. This is a
+sufficient approximation for the antenna band and radiation pattern; the
+effect of the SMA transition itself (a shift of a few hundred MHz) is not
+included.
 
-Kullanim:
-  python vivaldi_openems.py
-Grafikler scriptin bulundugu klasore kaydedilir: s11.png, zin.png, pattern_*.png
+Usage:
+  python scripts/vivaldi_openems.py
+Plots are saved to results/v1: s11.png, zin.png, pattern_*.png
 """
 import os
 import numpy as np
 
 # ------------------------------------------------------------------
-# Kullanici parametreleri
+# User parameters
 # ------------------------------------------------------------------
-h      = 1.6          # alttas kalinligi [mm]
-eps_r  = 4.3          # FR-4 dielektrik sabiti
-tand   = 0.025        # FR-4 kayip tanjanti
+h      = 1.6          # substrate thickness [mm]
+eps_r  = 4.3          # FR-4 relative permittivity
+tand   = 0.025        # FR-4 loss tangent
 f_min  = 1e9          # [Hz]
 f_max  = 10e9         # [Hz]
-f_farfield = [2.4e9, 5.8e9]   # isima diyagrami hesaplanacak frekanslar
-pad    = 50.0         # anten etrafindaki hava boslugu [mm] (PML dahil)
+f_farfield = [2.4e9, 5.8e9]   # frequencies for the radiation patterns
+pad    = 50.0         # air margin around the antenna [mm] (including PML)
 
-# Mesh cozunurlugu [mm]. Kucuk = dogru ama yavas. Hizli bir ilk deneme icin
-# res_air=3, res_board=1.5, res_feed=0.5 yapabilirsin (~8 kat daha az hucre).
-res_air   = 1.5       # havada en buyuk hucre (lambda/20 @ 10 GHz)
-res_board = 0.75      # kart uzerinde (FR-4 icinde lambda/19 @ 10 GHz)
-res_feed  = 0.25      # besleme bolgesinde
+# Mesh resolution [mm]. Smaller = accurate but slow. For a quick first run use
+# res_air=3, res_board=1.5, res_feed=0.5 (~8x fewer cells).
+res_air   = 1.5       # largest cell in air (lambda/20 @ 10 GHz)
+res_board = 0.75      # on the board (lambda/19 in FR-4 @ 10 GHz)
+res_feed  = 0.25      # in the feed region
 
-SHOW_MODEL = True     # True: simulasyondan once modeli AppCSXCAD'de goster
-RUN_SIM    = True     # False: sadece modeli kur/goster, simulasyon yapma
-OUT_DIR    = os.path.dirname(os.path.abspath(__file__))   # grafikler scriptin yanina kaydedilir
-sim_path   = os.path.join(OUT_DIR, 'vivaldi_sim')         # openEMS ham verileri
-
-# ------------------------------------------------------------------
-# DXF'ten cikarilan geometri sabitleri [mm]
-# ------------------------------------------------------------------
-XC, YC = 44.4275, 27.77   # kol merkezleri: ust kol (+XC, YC), alt kol (-XC, YC)
-RA, RB = 47.21, 88.85     # kol dis kenari: elips yari eksenleri (x, y)
-RI     = 41.64            # kol ic kenari: cember yaricapi
-RS     = 30.0             # kart kenarindaki icbukey oyuk yaricapi
-NA, NB = 7.2175, 7.905    # ust besleme pad'inin boyun kavisleri (elips yari eksenleri)
-YPIN   = 15.0             # SMA pin konumu (x = 0)
-
+SHOW_MODEL = True     # True: show the model in AppCSXCAD before simulating
+RUN_SIM    = True     # False: only build/show the model, no simulation
+ROOT       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT_DIR    = os.path.join(ROOT, 'results', 'v1')            # plots
+sim_path   = os.path.join(ROOT, 'vivaldi_sim')              # raw openEMS data (git-ignored)
 
 # ------------------------------------------------------------------
-# Geometri (saf numpy; openEMS gerektirmez)
+# Geometry constants extracted from the DXF [mm]
+# ------------------------------------------------------------------
+XC, YC = 44.4275, 27.77   # arm centres: top arm (+XC, YC), bottom arm (-XC, YC)
+RA, RB = 47.21, 88.85     # arm outer edge: ellipse semi-axes (x, y)
+RI     = 41.64            # arm inner edge: circle radius
+RS     = 30.0             # radius of the concave cut-out at the board edge
+NA, NB = 7.2175, 7.905    # neck curves of the top feed pad (ellipse semi-axes)
+YPIN   = 15.0             # SMA pin position (x = 0)
+
+
+# ------------------------------------------------------------------
+# Geometry (pure numpy; does not need openEMS)
 # ------------------------------------------------------------------
 def arc(cx, cy, rx, ry, t0, t1, n=60):
-    """(cx, cy) merkezli elips yayi; t0 -> t1 derece. Nx2 dizi dondurur."""
+    """Elliptical arc centred at (cx, cy) from t0 to t1 degrees. Returns an Nx2 array."""
     t = np.radians(np.linspace(t0, t1, n))
     return np.column_stack([cx + rx * np.cos(t), cy + ry * np.sin(t)])
 
 
 def cos_taper(n=20):
-    """Alt seritteki kosinus profilli genisleme: (1.4554, 19.865) -> (2.7825, 27.77)."""
+    """Cosine-profile widening of the bottom strip: (1.4554, 19.865) -> (2.7825, 27.77)."""
     t = np.linspace(0.0, 1.0, n)
     x = 1.4554 + (2.7825 - 1.4554) * (1 - np.cos(np.pi * t)) / 2
     y = 19.865 + (27.77 - 19.865) * t
@@ -73,7 +75,7 @@ def cos_taper(n=20):
 
 
 def board_outline():
-    """FR-4 kart dis hatti (kose yuvarlatmalari ihmal edildi)."""
+    """FR-4 board outline (corner roundings neglected)."""
     pts = [np.array([[-14.4275, 10.0], [14.4275, 10.0]])]
     pts.append(arc(XC, YC, RS, RS, 180, 90, 60))        # (14.43, 27.77) -> (44.43, 57.77)
     pts.append(np.array([[49.425, 57.77], [49.425, 121.6],
@@ -83,45 +85,45 @@ def board_outline():
 
 
 def top_copper():
-    """Ust bakir: 20 mm besleme pad'i + saga acilan kol."""
+    """Top copper: 20 mm feed pad + arm flaring to the right."""
     pts = [np.array([[-10.0, 10.0], [10.0, 10.0], [10.0, 19.865]])]
-    pts.append(arc(10, YC, NA, NB, -90, -180, 40)[1:])  # sag boyun kavsi
-    pts.append(arc(XC, YC, RI, RI, 180, 90, 120))       # kolun ic kenari
-    pts.append(np.array([[XC, YC + RB]]))               # sag kenar boyunca yukari
-    pts.append(arc(XC, YC, RA, RB, 90, 180, 160)[1:])   # kolun dis kenari
-    pts.append(arc(-10, YC, NA, NB, 0, -90, 40)[1:])    # sol boyun kavsi
+    pts.append(arc(10, YC, NA, NB, -90, -180, 40)[1:])  # right neck curve
+    pts.append(arc(XC, YC, RI, RI, 180, 90, 120))       # inner edge of the arm
+    pts.append(np.array([[XC, YC + RB]]))               # up along the right edge
+    pts.append(arc(XC, YC, RA, RB, 90, 180, 160)[1:])   # outer edge of the arm
+    pts.append(arc(-10, YC, NA, NB, 0, -90, 40)[1:])    # left neck curve
     return np.vstack(pts)
 
 
 def bottom_copper():
-    """Alt bakir: pinden cikan serit + kosinus gecis + sola acilan kol."""
+    """Bottom copper: strip from the pin + cosine transition + arm flaring to the left."""
     tp = cos_taper()
     pts = [np.array([[-1.015, YPIN], [1.015, YPIN], [1.015, 19.365], [1.4554, 19.365]])]
-    pts.append(tp)                                      # sag gecis
-    pts.append(arc(-XC, YC, RA, RB, 0, 90, 160)[1:])    # kolun dis kenari (sola kivrilir)
-    pts.append(arc(-XC, YC, RI, RI, 90, 0, 120))        # kolun ic kenari
+    pts.append(tp)                                      # right transition
+    pts.append(arc(-XC, YC, RA, RB, 0, 90, 160)[1:])    # outer edge of the arm (curving to the left)
+    pts.append(arc(-XC, YC, RI, RI, 90, 0, 120))        # inner edge of the arm
     tl = tp[::-1].copy()
-    tl[:, 0] *= -1                                      # sol gecis (yukaridan asagi)
+    tl[:, 0] *= -1                                      # left transition (top to bottom)
     pts.append(tl)
     pts.append(np.array([[-1.4554, 19.365], [-1.015, 19.365]]))
     return np.vstack(pts)
 
 
 def pin_pad():
-    """Alt yuzdeki pin pad'i (r = 1.025 mm)."""
+    """Pin pad on the bottom side (r = 1.025 mm)."""
     return arc(0, YPIN, 1.025, 1.025, 0, 360, 33)[:-1]
 
 
-# Via ve SMA toprak bacaklari: (x, y, yaricap), z = 0 .. h
+# Vias and SMA ground legs: (x, y, radius), z = 0 .. h
 VIAS = [(sx * 4.465, y, 0.40) for sx in (1, -1) for y in (12.46, 17.54)] + \
        [(sx * 2.54,  y, 0.85) for sx in (1, -1) for y in (12.46, 17.54)]
 
-# Alt yuzdeki SMA toprak pad'leri: (xmin, ymin, xmax, ymax)
+# SMA ground pads on the bottom side: (xmin, ymin, xmax, ymax)
 GND_PADS = [(1.415, 11.035, 5.465, 18.965), (-5.465, 11.035, -1.415, 18.965)]
 
 
 def merge_lines(important, filler, min_d=0.12):
-    """Onemli cizgileri koru; onlara min_d'den yakin dolgu cizgilerini at."""
+    """Keep the important lines; drop filler lines closer than min_d to them."""
     imp = np.unique(np.round(np.asarray(important, float), 4))
     keep = [v for v in np.unique(np.round(np.asarray(filler, float), 4))
             if np.min(np.abs(imp - v)) > min_d]
@@ -129,7 +131,7 @@ def merge_lines(important, filler, min_d=0.12):
 
 
 # ------------------------------------------------------------------
-# openEMS modeli
+# openEMS model
 # ------------------------------------------------------------------
 def build_and_run():
     from CSXCAD import ContinuousStructure
@@ -140,7 +142,7 @@ def build_and_run():
     f0 = 0.5 * (f_min + f_max)
     fc = 0.5 * (f_max - f_min)
 
-    FDTD = openEMS(NrTS=80000, EndCriteria=1e-4)   # -40 dB enerji kriteri
+    FDTD = openEMS(NrTS=80000, EndCriteria=1e-4)   # -40 dB energy criterion
     FDTD.SetGaussExcite(f0, fc)
     FDTD.SetBoundaryCond(['PML_8'] * 6)
 
@@ -149,17 +151,17 @@ def build_and_run():
     mesh = CSX.GetGrid()
     mesh.SetDeltaUnit(unit)
 
-    # --- Malzemeler ---
+    # --- Materials ---
     kappa = 2 * np.pi * f0 * EPS0 * eps_r * tand
     fr4 = CSX.AddMaterial('FR4', epsilon=eps_r, kappa=kappa)
     pec = CSX.AddMetal('PEC')
 
-    # --- Alttas ---
+    # --- Substrate ---
     o = board_outline()
     fr4.AddLinPoly(points=[o[:, 0], o[:, 1]], norm_dir='z',
                    elevation=0, length=h, priority=1)
 
-    # --- Bakir (sifir kalinlikli PEC levhalar) ---
+    # --- Copper (zero-thickness PEC sheets) ---
     t = top_copper()
     pec.AddPolygon(points=[t[:, 0], t[:, 1]], norm_dir='z', elevation=h, priority=10)
     b = bottom_copper()
@@ -171,7 +173,7 @@ def build_and_run():
     for (x, y, r) in VIAS:
         pec.AddCylinder([x, y, 0], [x, y, h], r, priority=10)
 
-    # --- Port: pin konumunda dikey 50 ohm lumped port ---
+    # --- Port: vertical 50 ohm lumped port at the pin position ---
     rp = 0.635
     port = FDTD.AddLumpedPort(1, 50, [-rp, YPIN - rp, 0], [rp, YPIN + rp, h],
                               'z', 1.0, priority=5)
@@ -180,8 +182,8 @@ def build_and_run():
     xb, yb0, yb1 = 49.425, 10.0, 121.6
     x_imp = [-xb - pad, xb + pad, -xb, xb, -XC, XC, -14.4275, 14.4275,
              -10, 10, -5.465, -1.415, 1.415, 5.465, -2.7825, 2.7825, -rp, rp]
-    x_fill = np.concatenate([np.arange(-48.0, 48.01, res_board),   # kart
-                             np.arange(-6.0, 6.01, res_feed)])      # besleme bolgesi
+    x_fill = np.concatenate([np.arange(-48.0, 48.01, res_board),   # board
+                             np.arange(-6.0, 6.01, res_feed)])      # feed region
     y_imp = [yb0 - pad, yb1 + pad, yb0, yb1, 11.035, 18.965, 19.365, 19.865,
              27.77, 57.77, YC + RI, YC + RB, YPIN - rp, YPIN + rp]
     y_fill = np.concatenate([np.arange(yb0, yb1, res_board),
@@ -191,9 +193,9 @@ def build_and_run():
     mesh.AddLine('z', [-pad, h + pad] + list(np.linspace(0, h, 5)))
     mesh.SmoothMeshLines('all', res_air, ratio=1.4)
     n = [mesh.GetQtyLines(d) for d in 'xyz']
-    print('Mesh: {} x {} x {} = {:.2f} milyon hucre'.format(*n, np.prod(n) / 1e6))
+    print('Mesh: {} x {} x {} = {:.2f} million cells'.format(*n, np.prod(n) / 1e6))
 
-    # --- Uzak alan kutusu ---
+    # --- Farfield box ---
     nf2ff = FDTD.CreateNF2FFBox()
 
     os.makedirs(sim_path, exist_ok=True)
@@ -211,7 +213,7 @@ def build_and_run():
 
 
 # ------------------------------------------------------------------
-# Sonuclar
+# Results
 # ------------------------------------------------------------------
 def postprocess(port, nf2ff):
     import matplotlib.pyplot as plt
@@ -227,26 +229,26 @@ def postprocess(port, nf2ff):
     plt.plot(f / 1e9, s11_db, 'k-', lw=2)
     plt.axhline(-10, color='r', ls='--', lw=1)
     plt.grid(True)
-    plt.xlabel('Frekans (GHz)')
+    plt.xlabel('Frequency (GHz)')
     plt.ylabel('S11 (dB)')
     plt.title('Antipodal Vivaldi - S11')
     plt.savefig(os.path.join(OUT_DIR, 's11.png'), dpi=150, bbox_inches='tight')
 
-    # Giris empedansi
+    # Input impedance
     plt.figure()
     plt.plot(f / 1e9, np.real(zin), 'k-', lw=2, label='Re{Zin}')
     plt.plot(f / 1e9, np.imag(zin), 'r--', lw=2, label='Im{Zin}')
     plt.grid(True)
     plt.legend()
-    plt.xlabel('Frekans (GHz)')
+    plt.xlabel('Frequency (GHz)')
     plt.ylabel('Zin (ohm)')
     plt.savefig(os.path.join(OUT_DIR, 'zin.png'), dpi=150, bbox_inches='tight')
 
-    # -10 dB bandi
+    # -10 dB band
     ok = s11_db < -10
     if np.any(ok):
         edges = np.flatnonzero(np.diff(ok.astype(int)))
-        print('S11 < -10 dB olan bolgeler (GHz):')
+        print('Regions with S11 < -10 dB (GHz):')
         start = f[0] if ok[0] else None
         for i in edges:
             if ok[i + 1]:
@@ -257,12 +259,12 @@ def postprocess(port, nf2ff):
         if start is not None:
             print('  {:.2f} - {:.2f}'.format(start / 1e9, f[-1] / 1e9))
     else:
-        print('S11 hicbir frekansta -10 dB altina inmiyor.')
+        print('S11 does not go below -10 dB at any frequency.')
 
-    # Isima diyagramlari
-    #   E-duzlemi (anten duzlemi, xy): theta = 90, phi = 0..360
-    #   H-duzlemi (yz):                phi = 90, theta = -180..180
-    #   Ana isima yonu +y (theta = 90, phi = 90)
+    # Radiation patterns
+    #   E-plane (antenna plane, xy): theta = 90, phi = 0..360
+    #   H-plane (yz):                phi = 90, theta = -180..180
+    #   Main beam direction +y (theta = 90, phi = 90)
     center = [0, 60e-3, 0]
     phi = np.arange(0, 361, 2.0)
     theta = np.arange(-180, 181, 2.0)
@@ -279,9 +281,9 @@ def postprocess(port, nf2ff):
         e_h = res_h.E_norm[i][:, 0]
         d_e = 20 * np.log10(e_e / np.max(e_e)) + d_max
         d_h = 20 * np.log10(e_h / np.max(e_h)) + 10 * np.log10(res_h.Dmax[i])
-        d_y = np.interp(90.0, phi, d_e)   # +y yonundeki yonluluk
-        print('{:.1f} GHz: Dmax = {:.2f} dBi, +y yonunde D = {:.2f} dBi, '
-              'isima verimi = {:.0f} %, kazanc ~ {:.2f} dBi'
+        d_y = np.interp(90.0, phi, d_e)   # directivity towards +y
+        print('{:.1f} GHz: Dmax = {:.2f} dBi, D towards +y = {:.2f} dBi, '
+              'radiation efficiency = {:.0f} %, gain ~ {:.2f} dBi'
               .format(fr / 1e9, d_max, d_y, 100 * eff,
                       d_y + 10 * np.log10(max(eff, 1e-6))))
 
@@ -289,11 +291,11 @@ def postprocess(port, nf2ff):
         ax1 = fig.add_subplot(121, projection='polar')
         ax1.plot(np.radians(phi), np.maximum(d_e, d_max - 30), 'k-', lw=2)
         ax1.set_rmin(d_max - 30)
-        ax1.set_title('E-duzlemi (xy) {:.1f} GHz [dBi]'.format(fr / 1e9))
+        ax1.set_title('E-plane (xy) {:.1f} GHz [dBi]'.format(fr / 1e9))
         ax2 = fig.add_subplot(122, projection='polar')
         ax2.plot(np.radians(theta), np.maximum(d_h, d_max - 30), 'r-', lw=2)
         ax2.set_rmin(d_max - 30)
-        ax2.set_title('H-duzlemi (yz) {:.1f} GHz [dBi]'.format(fr / 1e9))
+        ax2.set_title('H-plane (yz) {:.1f} GHz [dBi]'.format(fr / 1e9))
         fig.savefig(os.path.join(OUT_DIR, 'pattern_{:.1f}GHz.png'.format(fr / 1e9)), dpi=150, bbox_inches='tight')
 
     plt.show()

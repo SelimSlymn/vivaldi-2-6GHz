@@ -1,0 +1,5 @@
+       original: worst S11 in 2-6 GHz =  -8.62 dB @ 2.00 GHz | -10 dB band 2.07-2.97 GHz
+     A_proposed: worst S11 in 2-6 GHz =  -8.79 dB @ 2.70 GHz
+    B_round_tip: worst S11 in 2-6 GHz =  -8.97 dB @ 2.73 GHz | -10 dB band 1.76-2.54 GHz
+    C_back_edge: worst S11 in 2-6 GHz =  -8.36 dB @ 2.68 GHz
+D_fr4_extension: worst S11 in 2-6 GHz =  -8.52 dB @ 2.69 GHz

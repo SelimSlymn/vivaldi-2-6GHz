@@ -1,4 +1,4 @@
-frekans_GHz,aci_deg,dphi_sim_deg,dphi_ideal_deg,genlik_p1_dBi,genlik_p2_dBi,genlik_farki_dB,belirsizliksiz_bolge
+freq_GHz,angle_deg,dphi_sim_deg,dphi_ideal_deg,gain_p1_dBi,gain_p2_dBi,gain_diff_dB,unambiguous
 2,-90,153.95,-57.64,-4.16,0.67,-4.83,0
 2,-89,157.25,-57.63,-4.17,0.95,-5.12,0
 2,-88,160.62,-57.60,-4.16,1.22,-5.38,0
