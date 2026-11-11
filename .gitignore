@@ -1,0 +1,25 @@
+# CST result folders (Result, ModelCache... live in a folder named after the .cst file)
+cst/**/Result/
+cst/**/ModelCache/
+cst/**/Temp/
+cst/**/SP/
+cst/**/Model/
+cst/**/CADData/
+*.lok
+
+# openEMS raw simulation data
+sim_*/
+*_sim/
+*.h5
+
+# Large farfield exports (regenerate with the CST macros)
+ff_*.txt
+
+# Python
+__pycache__/
+*.pyc
+
+# System
+Thumbs.db
+desktop.ini
+.DS_Store

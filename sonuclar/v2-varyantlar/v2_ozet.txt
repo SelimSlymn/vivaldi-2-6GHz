@@ -1,0 +1,5 @@
+  orijinal: 2-6 GHz en kotu S11 =  -8.62 dB @ 2.00 GHz | -10 dB bandi 2.07-2.97 GHz
+A_onerilen: 2-6 GHz en kotu S11 =  -8.79 dB @ 2.70 GHz
+B_uc_yuvarlak: 2-6 GHz en kotu S11 =  -8.97 dB @ 2.73 GHz | -10 dB bandi 1.76-2.54 GHz
+C_arka_kenar: 2-6 GHz en kotu S11 =  -8.36 dB @ 2.68 GHz
+D_fr4_uzanti: 2-6 GHz en kotu S11 =  -8.52 dB @ 2.69 GHz
